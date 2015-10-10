@@ -1,12 +1,20 @@
 package rangerwolf.java.associationrules;
 
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
 
+import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.StringUtils;
+
+import com.google.common.base.Joiner;
+import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import com.google.gson.Gson;
 
@@ -14,6 +22,9 @@ public class Apriori {
 	
 	static final double MIN_CONF = 0.6;
 	static final int MIN_SUPPORT = 2;
+	static final String JOIN_CHAR = "#";
+	
+	static Map<String, Integer> freqItemSetSup = Maps.newHashMap();
 	
 	/**
 	 * 初始化数据集. <br>
@@ -27,6 +38,9 @@ public class Apriori {
 	 * @return
 	 */
 	static List<String[]> initTrans() {
+		
+		freqItemSetSup.clear();
+		freqItemSetSup = Maps.newHashMap();
 		
 		List<String[]> tranLst = Lists.newArrayList();
 		
@@ -72,8 +86,11 @@ public class Apriori {
 		}
 		
 		for(String item : frequences.keySet()) {
-			if(frequences.get(item) >= MIN_SUPPORT) {
+			Integer curSupport = frequences.get(item);
+			
+			if(curSupport  >= MIN_SUPPORT) {
 				ret.add(new String[]{item});
+				freqItemSetSup.put(item, curSupport);
 			}
 		}
 		
@@ -140,6 +157,9 @@ public class Apriori {
 						tmp[n] = tmpA[n];
 					}
 					tmp[tmpA.length] = tmpB[tmpB.length - 1];
+					
+					Arrays.sort(tmp);
+					
 					ret.add(tmp);
 				}
 			}
@@ -185,13 +205,146 @@ public class Apriori {
 		
 		
 		for(String[] itemSet : itemSetCnt.keySet()) {
-			if(itemSetCnt.get(itemSet) >= MIN_SUPPORT) {
+			Integer curSupport = itemSetCnt.get(itemSet);
+			
+			if(curSupport >= MIN_SUPPORT) {
 				ret.add(itemSet);
+				freqItemSetSup.put(StringUtils.join(itemSet, JOIN_CHAR), curSupport);
 			}
 		}
 		
 		return ret;
 	}
+	
+	
+	/**
+	 * 假设itemSet = {1 2 3} 那么就生成如下的规则：<br>
+	 * {1 2} -> {3}<br>
+	 * {1 3} -> {2}<br>
+	 * {2 3} -> {1}<br>
+	 * @param itemSet
+	 * @return
+	 */
+	private static Multimap<String[], String[]> genCandidateRules(final String[] itemSet) {
+		Multimap<String[], String[]> rules = ArrayListMultimap.create();
+		if(itemSet == null || itemSet.length <= 1)
+			return rules;
+		
+		for(int i = 0; i < itemSet.length; i++) {
+			
+			String[] y_x = {itemSet[i]};
+			
+			String[] x = new String[itemSet.length - 1];
+			List<String> itemLst = Lists.newArrayList(itemSet);
+			itemLst.remove(i);
+			x = itemLst.toArray(x);
+			rules.put(x, y_x);
+		}
+		
+		return rules;
+	}
+	
+	
+	/**
+	 * 从规则生成子规则 <br>
+	 * 比如： {1 2} -> {3} <br>
+	 * 生成： {1} -> {2 3} and {2} -> {1 3} <br> 
+	 * 注意生成规则： 从左边放到右边的那一项一定要大于右边的最大的项
+	 * @param x   : 相当于 X
+	 * @param y_x : 相当于 Y-X
+	 * @return
+	 */
+	private static Multimap<String[], String[]> genSubCandidateRules(String[] x, String[] y_x, Integer itemSetSup) {
+		
+		Multimap<String[], String[]> subRules = ArrayListMultimap.create();
+		
+		if(x == null || y_x == null || x.length <= 1 || y_x.length == 0)
+			return subRules;
+		
+		else {
+			String maxRight = Collections.max(Arrays.asList(y_x));
+			
+			for(int i = 0; i < x.length; i++) {
+				// x[i] > maxRight 的时候才能移动到右边
+				if(x[i].compareToIgnoreCase(maxRight) < 0) {
+					String[] tmpX = Arrays.copyOf(x, x.length);
+					tmpX = ArrayUtils.remove(x, i);
+					String[] tmpY_X = Arrays.copyOf(y_x, y_x.length);
+					tmpY_X = ArrayUtils.add(y_x, x[i]);
+					
+					String tmpXStr = StringUtils.join(tmpX, JOIN_CHAR);
+					if(freqItemSetSup.containsKey(tmpXStr)) {
+						Integer tmpXSup = freqItemSetSup.get(tmpXStr);
+						double tmpXConf = itemSetSup.doubleValue() / tmpXSup.doubleValue() ; 
+						if( tmpXConf >= MIN_CONF) {
+							System.out.printf("%s => %s [%.2f] \n", Arrays.toString(tmpX),
+									Arrays.toString(tmpY_X), tmpXConf);
+							genSubCandidateRules(tmpX, tmpY_X, tmpXSup);
+						}
+					}
+					
+				}
+			}
+			
+			return subRules;
+		}
+	}
+	
+	/**
+	 * 一边生成subItemSets一边进行剪枝，否则需要进行的计算就太多了<br>
+	 * example: {1, 2, 3, 4, 5} <br>
+	 * 第一遍：<br>
+	 * 1234 -> 5 <br>
+	 * 1235 -> 4 <br>
+	 * 1245 -> 3 <br>
+	 * 1345 -> 2 <br>
+	 * 2345 -> 1 <br>
+	 * 
+	 * 假设 1234 -> 5 的阈值不足， 那么 1234 进一步切分的子集就不再需要了, 可以直接到第二个规则上进行<br>
+	 * 假设 1235 -> 4 的阈值足够， 那么 1235可以进一步切分子集 , 如下：<br>
+	 * 123 -> 45 <br>
+	 * 125 -> 43 <br>
+	 * 135 -> 42 <br>
+	 * 235 -> 41 <br>
+	 * 
+	 * 相当于每次只切一层，然后按照这个继续递归的进行下去就可以很大程度的减少重复计算 <br>
+	 * 
+	 * 有个bug： 比如 1234 跟 1235的子集都包括 123 会重复计算了
+	 * @return
+	 */
+	static void genRules() {
+		
+		for(String itemSetStr : freqItemSetSup.keySet()) {
+			
+			String[] itemSet = itemSetStr.split(JOIN_CHAR);
+			Integer itemSetSup = freqItemSetSup.get(itemSetStr);
+			
+			Multimap<String[], String[]> rules = genCandidateRules(itemSet);
+			
+			for(String[] x : rules.keySet()) {
+				String xStr = StringUtils.join(x, JOIN_CHAR);
+				if(!freqItemSetSup.containsKey(xStr))
+					continue;
+				
+				Integer xSup = freqItemSetSup.get(xStr);
+				
+				double xConf = itemSetSup.doubleValue() / xSup.doubleValue();
+				
+				if(xConf >= MIN_CONF) {
+					Collection<String[]> y_x_lst = rules.get(x);
+					for(String[] y_x : y_x_lst) {
+						System.out.printf("%s => %s [%.2f] \n", Arrays.toString(x),
+								Arrays.toString(y_x), xConf
+								);
+						if(x.length > 1)
+							genSubCandidateRules(x, y_x, xSup);
+					}
+				}
+			}
+		}
+		
+	}
+	
 	
 	public static void main(String[] args) {
 		
@@ -200,6 +353,7 @@ public class Apriori {
 		List<String[]> _1FreqItemSets = genOneFeqItemSets(trans);
 		
 		System.out.println("1-freq item sets: " + new Gson().toJson(_1FreqItemSets));
+		
 		
 		List<String[]> _2Candidates = genCandidates(_1FreqItemSets);
 		System.out.println("2-candidates: " + new Gson().toJson(_2Candidates));
@@ -216,6 +370,9 @@ public class Apriori {
 		List<String[]> _4Candidates = genCandidates(_3FreqItemSets);
 		System.out.println("4-candidates: " + new Gson().toJson(_4Candidates));
 		
+		System.out.println("-------------------");
+		genRules();
 	}
+	
 	
 }
