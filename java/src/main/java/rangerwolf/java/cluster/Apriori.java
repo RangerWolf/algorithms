@@ -30,10 +30,22 @@ public class Apriori {
 		
 		List<String[]> tranLst = Lists.newArrayList();
 		
-		tranLst.add("1 3 4".split(" "));
-		tranLst.add("2 3 5".split(" "));
-		tranLst.add("1 2 3 5".split(" "));
-		tranLst.add("2 5".split(" "));
+//		tranLst.add("1 3 4".split(" "));
+//		tranLst.add("2 3 5".split(" "));
+//		tranLst.add("1 2 3 5".split(" "));
+//		tranLst.add("2 5".split(" "));
+		
+		// add another test sample to verify 
+		tranLst.add(new String[] { "I1", "I2", "I5" });
+		tranLst.add(new String[] { "I2", "I4"  });
+		tranLst.add(new String[] { "I2", "I3" });
+		tranLst.add(new String[] { "I1", "I2", "I4" });
+		tranLst.add(new String[] { "I1", "I3" });
+		tranLst.add(new String[] { "I1", "I3" });
+		tranLst.add(new String[] { "I2", "I3" });
+		tranLst.add(new String[] { "I1", "I2", "I3" });
+		tranLst.add(new String[] { "I1", "I2", "I3", "I5" });
+		
 		
 		System.out.println("All trans :");
 		System.out.println(new Gson().toJson(tranLst) + "\n");
