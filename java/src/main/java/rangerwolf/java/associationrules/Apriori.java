@@ -1,4 +1,4 @@
-package rangerwolf.java.cluster;
+package rangerwolf.java.associationrules;
 
 import java.util.Arrays;
 import java.util.List;
